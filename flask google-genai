@@ -12,3 +12,5 @@ folium>=0.14         # dashboard map
 # Test run for this release (sandbox without internet): numpy 2.4.4, scipy 1.17.1, pandas 3.0.2,
 # networkx 3.6.1, matplotlib 3.10.8, requests 2.33.1, Python 3.12.3.
 # rasterio, geopandas, shapely and folium were NOT installed there, so code using them was not executed (see VALIDATION_REPORT.md).
+flask
+google-genai
