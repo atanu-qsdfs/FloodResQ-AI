@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FloodResQ AI - mapping flood damage from space</title>
+<style>
+:root{--bg:#f6f8fb;--card:#fff;--ink:#14202e;--mute:#546275;--line:#d6dee9;--acc:#0b5fa5;--accsoft:#e3f0fb;--warn:#fff4d6;--warnline:#d9a400;--bad:#b3261e;--ok:#1b7a3a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1621;--card:#16212f;--ink:#e8eef6;--mute:#9fb0c4;--line:#2a3b50;--acc:#6bb4f0;--accsoft:#14304a;--warn:#3a3114;--warnline:#c9a227;--bad:#ff8a80;--ok:#6fd48c}}
+:root[data-theme="dark"]{--bg:#0e1621;--card:#16212f;--ink:#e8eef6;--mute:#9fb0c4;--line:#2a3b50;--acc:#6bb4f0;--accsoft:#14304a;--warn:#3a3114;--warnline:#c9a227;--bad:#ff8a80;--ok:#6fd48c}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI","Noto Sans","Noto Sans Devanagari",Arial,sans-serif}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--card);border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 16px;flex-wrap:wrap}
+.brand{font-weight:700;font-size:1.1rem}.brand span{color:var(--acc)}
+.pill{font-size:.78rem;background:var(--warn);border:1px solid var(--warnline);padding:2px 10px;border-radius:99px}
+.lang button{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:6px 12px;cursor:pointer;font:inherit}
+.lang button:first-child{border-radius:8px 0 0 8px}.lang button:last-child{border-radius:0 8px 8px 0;border-left:0}
+.lang button[aria-pressed="true"]{background:var(--acc);color:#fff;border-color:var(--acc)}
+main{max-width:980px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:clamp(1.7rem,5vw,2.5rem);line-height:1.15;margin:.2em 0}
+h2{font-size:1.3rem;margin:1.8em 0 .6em}
+.lead{font-size:1.1rem;color:var(--mute);max-width:70ch}
+.notice{background:var(--warn);border:1px solid var(--warnline);border-radius:10px;padding:10px 14px;margin:14px 0}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;padding:0;list-style:none;counter-reset:s}
+.steps li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;counter-increment:s}
+.steps li:before{content:counter(s);display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--acc);color:#fff;font-weight:700;margin-bottom:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;background:var(--card)}
+.drop.over{border-color:var(--acc);background:var(--accsoft)}
+button.primary{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:10px 18px;font:inherit;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.m{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.m b{display:block;font-size:1.7rem;line-height:1.2}.m small{color:var(--mute)}
+.verdict{border-left:6px solid var(--acc);background:var(--accsoft);padding:12px 14px;border-radius:8px}
+.err{color:var(--bad);font-weight:600}
+ul.names{columns:2 200px;padding-left:20px}
+.table-wrap{overflow-x:auto}
+footer{border-top:1px solid var(--line);padding:18px 16px 30px;color:var(--mute);font-size:.85rem;max-width:980px;margin:0 auto}
+[hidden]{display:none!important}
+@media print{header,.drop,.noprint,.steps,#how{display:none!important}body{background:#fff;color:#000}.card,.m{border-color:#999}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">FloodResQ <span>AI</span> <span class="pill" data-i="badge"></span></div>
+  <div class="lang" role="group" aria-label="Language">
+    <button id="b-en" aria-pressed="true" type="button">English</button><button id="b-ne" aria-pressed="false" type="button">नेपाली</button>
+  </div>
+</header>
+<main>
+  <h1 data-i="tag"></h1>
+  <p class="lead" data-i="heroP"></p>
+  <div class="notice" data-i="notice"></div>
+
+  <h2 id="how" data-i="howH"></h2>
+  <ol class="steps" id="steps"></ol>
+
+  <h2 data-i="resH"></h2>
+  <div class="drop" id="drop">
+    <p data-i="dropHint"></p>
+    <input type="file" id="file" accept=".json,application/json" hidden>
+    <button class="primary" id="pick" type="button" data-i="loadBtn"></button>
+    <p class="err" id="err" role="alert" hidden></p>
+  </div>
+
+  <section id="out" hidden>
+    <div class="notice" id="simwarn" hidden></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="grid" id="metrics" style="margin-top:12px"></div>
+    <div class="card" id="noise"></div>
+    <div class="card"><h3 data-i="namesH" style="margin-top:0"></h3><ul class="names" id="names"></ul><p id="namesNote" style="color:var(--mute)"></p></div>
+    <div class="card"><h3 data-i="repH" style="margin-top:0"></h3><div id="report"></div>
+      <p class="noprint"><button class="primary" id="print" type="button" data-i="printBtn"></button></p></div>
+    <div class="card"><h3 data-i="provH" style="margin-top:0"></h3><p id="prov"></p></div>
+  </section>
+
+  <h2 data-i="limH"></h2>
+  <div class="card"><ul id="lims"></ul></div>
+
+  <h2 data-i="dataH"></h2>
+  <div class="card" data-i="dataP"></div>
+</main>
+<footer>
+  <p><b data-i="attrH"></b></p>
+  <p>Contains modified Copernicus Sentinel data 2026.</p>
+  <p>Produced using Copernicus WorldDEM-30 &copy; DLR e.V. 2010&ndash;2014 and &copy; Airbus Defence and Space GmbH 2014&ndash;2018 provided under COPERNICUS by the European Union and ESA; all rights reserved.</p>
+  <p>&copy; OpenStreetMap contributors.</p>
+  <p data-i="citeP"></p>
+  <p data-i="respP"></p>
+</footer>
+<script>
+const T={
+en:{badge:"Educational prototype · not an operational tool",tag:"Mapping flood damage from space",
+heroP:"FloodResQ AI compares before and after Sentinel-1 radar images, overlays pre-event OpenStreetMap, and estimates which areas and roads may be affected and which settlements may have lost their road link to a hospital or town.",
+notice:"This page shows no results until you load your own results.json. Nothing on it is simulated or pre-filled.",
+howH:"How it works",steps:["Choose an area and a flood date","Radar change detection on the same orbit track, before versus after","Overlay pre-event OpenStreetMap buildings, roads and bridges","Road graph: which settlements lose every route to a hospital or town","A copilot writes English and Nepali reports; every number must come from the results file"],
+resH:"Your results",dropHint:"Load the results.json produced by your notebook run. It is read in your browser and never uploaded.",loadBtn:"Load results.json",
+namesH:"Possibly cut off",repH:"Situation report (written from the numbers above)",printBtn:"Print / save as PDF",provH:"Sources and time",
+limH:"What this cannot do",dataH:"Data rules",
+dataP:"Inputs: Sentinel-1, Sentinel-2, Copernicus DEM and OpenStreetMap as it was before the event. Published damage maps (Copernicus EMS, UNOSAT) and OpenStreetMap edits made after the event are never inputs; they may only be used afterwards to check results.",
+attrH:"Attribution",citeP:"Training datasets (Kuro Siwo, Sen1Floods11): not used. If Copernicus EMS EMSR927 is used for checking, credit: European Union, Copernicus Emergency Management Service data.",
+respP:"This disaster is recent and many families are still affected. No images of victims are used. The Nepali text should be reviewed by a native speaker.",
+lims:["Sentinel satellites revisit an area only every few days, so they cannot warn of a sudden glacier collapse.","Radar shadow, layover, snow, rain and soil moisture can create false flags or hide real damage; thresholds are simple rules.","Roads, buildings and bridges come from pre-event OpenStreetMap, which is incomplete in remote areas. Cut-off status uses roads only.","Results are estimates. Unless a comparison with an independent reference map is reported, they are unvalidated and need field confirmation."],
+m:{water:"Possible open water (sq km)",change:"Radar surface change, candidate (sq km)",bld:"Buildings in flagged area",road:"Road in flagged area (km)",br:"Bridges possibly affected",cut:"Settlements possibly cut off"},
+of:"of",verdict:{water_detected:"Possible open water detected",no_water_detected:"No open water detected above the noise level",inconclusive:"Inconclusive: the data cannot settle whether there was open water",unknown:"Older results file: no evidence verdict recorded"},
+conf:"confidence",
+reasons:{low_valid_coverage:"Much of the river corridor lacks reliable radar data.",noisy_scene:"The radar images are noisy.",low_pair_coverage:"The before/after pair covers only part of the area.",no_control:"No pre-event control comparison was available, so the noise level is unknown.",water_not_above_noise:"The noise check flagged almost as much as the event pair.",optical_disagrees:"Cloud-free optical imagery disagrees with the radar water."},
+noise:"Noise check (two pre-event scenes compared): water %s sq km, change %s sq km.",nonoise:"No noise check is recorded in this file.",
+sim:"This file is marked as simulated. Do not present it as a real analysis.",
+namesNone:"No settlement is listed as possibly cut off.",namesTrunc:"List shortened; the full list is in the results file.",
+bad:"This does not look like a FloodResQ results.json.",
+prov:"Sentinel-1 track %s (%s), before %s, after %s; OSM snapshot %s (%s); software %s; generated %s UTC.",verified:"checked element by element",unverified:"date not verified in this file",
+r:{flood:{water_detected:"Radar comparison (track %s, before %s, after %s) suggests about %s sq km of possible open water.",no_water_detected:"Radar comparison (track %s, before %s, after %s) found no open water above the noise level (%s sq km flagged).",inconclusive:"Radar comparison (track %s, before %s, after %s) is inconclusive about open water (%s sq km flagged).",unknown:"Radar comparison (track %s, before %s, after %s) flagged about %s sq km."},
+change:" It also flags about %s sq km of possible surface change; this is a radar candidate, not confirmed debris.",est:" These are estimates, not confirmed damage.",
+dmg:"Using pre-event OpenStreetMap, %s of %s mapped buildings and %s km of %s km of mapped road may lie in flagged areas; %s of %s mapped bridges are possibly affected.",
+acc:"Road-network analysis checked %s settlements; %s may have lost their road link to the nearest hospital or town.",likely:" (%s when only open water is counted)",list:" Possibly cut off: %s.",
+oth:" %s were already unconnected in the pre-event road map and %s were too far from any mapped road to test."}},
+ne:{badge:"शैक्षिक प्रोटोटाइप · सञ्चालनगत उपकरण होइन",tag:"अन्तरिक्षबाट बाढी क्षति नक्सांकन",
+heroP:"FloodResQ AI ले बाढीअघि र पछिका Sentinel-1 रडार तस्बिरको तुलना गर्छ, घटनाअघिको OpenStreetMap माथि राख्छ, र कुन क्षेत्र र सडक प्रभावित हुन सक्छन् तथा कुन बस्तीले अस्पताल वा शहरसम्मको सडक सम्पर्क गुमाएको हुन सक्छ भन्ने अनुमान गर्छ।",
+notice:"तपाईंले आफ्नै results.json लोड नगरेसम्म यो पेजमा कुनै नतिजा देखिँदैन। यहाँ कुनै कुरा नक्कली वा पहिले भरिएको छैन।",
+howH:"यसले कसरी काम गर्छ",steps:["क्षेत्र र बाढीको मिति रोज्नुहोस्","उही कक्षा ट्र्याकमा अघि र पछिका रडार तस्बिरको परिवर्तन पहिचान","घटनाअघिको OpenStreetMap का भवन, सडक र पुल माथि राख्ने","सडक सञ्जाल: कुन बस्तीले अस्पताल वा शहरसम्मका सबै बाटो गुमाउँछ","कोपाइलटले अंग्रेजी र नेपालीमा प्रतिवेदन लेख्छ; हरेक संख्या नतिजा फाइलबाटै आउनुपर्छ"],
+resH:"तपाईंका नतिजा",dropHint:"आफ्नो नोटबुकले बनाएको results.json लोड गर्नुहोस्। यो तपाईंको ब्राउजरमै पढिन्छ, कतै अपलोड हुँदैन।",loadBtn:"results.json लोड गर्नुहोस्",
+namesH:"सम्भावित रूपमा अलग भएका बस्ती",repH:"स्थिति प्रतिवेदन (माथिका संख्याबाट लेखिएको)",printBtn:"छाप्नुहोस् / PDF बनाउनुहोस्",provH:"स्रोत र समय",
+limH:"यसले के गर्न सक्दैन",dataH:"डेटा नियम",
+dataP:"इनपुट: Sentinel-1, Sentinel-2, Copernicus DEM र घटनाअघिको अवस्थाको OpenStreetMap। प्रकाशित क्षति नक्सा (Copernicus EMS, UNOSAT) र घटनापछि गरिएका OpenStreetMap सम्पादन कहिल्यै इनपुट हुँदैनन्; नतिजा जाँच्न मात्र पछि प्रयोग गर्न सकिन्छ।",
+attrH:"श्रेय",citeP:"प्रशिक्षण डेटासेट (Kuro Siwo, Sen1Floods11): प्रयोग गरिएको छैन। जाँचका लागि Copernicus EMS EMSR927 प्रयोग गरिए श्रेय: European Union, Copernicus Emergency Management Service data।",
+respP:"यो विपद् हालकै हो र धेरै परिवार अझै प्रभावित छन्। पीडितका तस्बिर प्रयोग गरिएको छैन। नेपाली पाठ नेपाली भाषी व्यक्तिले जाँच्नुपर्छ।",
+lims:["Sentinel उपग्रहले केही दिनको अन्तरमा मात्र फेरि तस्बिर लिन्छ, त्यसैले हिमनदी अचानक भत्किने जस्ता घटनाको पूर्वसूचना दिन सक्दैन।","रडार छाया, लेओभर, हिउँ, वर्षा र माटोको चिस्यानले गलत संकेत दिन वा वास्तविक क्षति लुकाउन सक्छन्; सीमा मान सरल नियम मात्र हुन्।","सडक, भवन र पुल घटनाअघिको OpenStreetMap बाट आएका हुन्, जुन दुर्गम ठाउँमा अपूर्ण हुन्छ। बस्ती अलग हुने विश्लेषण सडकमा मात्र आधारित छ।","नतिजा अनुमान मात्र हुन्। स्वतन्त्र सन्दर्भ नक्सासँगको तुलना नदेखाइएसम्म यी प्रमाणित छैनन् र क्षेत्रमा पुष्टि गर्नुपर्छ।"],
+m:{water:"सम्भावित खुला पानी (वर्ग किमी)",change:"रडार सतह परिवर्तन, सम्भावित (वर्ग किमी)",bld:"चिनो लागेको क्षेत्रका भवन",road:"चिनो लागेको क्षेत्रको सडक (किमी)",br:"सम्भावित प्रभावित पुल",cut:"सम्भावित रूपमा अलग बस्ती"},
+of:"मध्ये",verdict:{water_detected:"सम्भावित खुला पानी भेटियो",no_water_detected:"शोरको स्तरभन्दा माथि खुला पानी भेटिएन",inconclusive:"निष्कर्षहीन: खुला पानी थियो वा थिएन भन्न तथ्याङ्क पुगेन",unknown:"पुरानो नतिजा फाइल: प्रमाणको निष्कर्ष दर्ज छैन"},
+conf:"विश्वसनीयता",
+reasons:{low_valid_coverage:"नदी करिडोरको ठूलो भागमा भरपर्दो रडार तथ्याङ्क छैन।",noisy_scene:"रडार तस्बिरमा धेरै शोर छ।",low_pair_coverage:"अघि/पछिको जोडीले क्षेत्रको केही भाग मात्र समेट्छ।",no_control:"घटनाअघिको नियन्त्रण तुलना उपलब्ध थिएन, त्यसैले शोरको स्तर अज्ञात छ।",water_not_above_noise:"शोर जाँचले घटना जोडी जतिकै क्षेत्र देखायो।",optical_disagrees:"बादल नभएको अप्टिकल तस्बिर रडारको पानीसँग मेल खाँदैन।"},
+noise:"शोर जाँच (घटनाअघिका दुई तस्बिरको तुलना): पानी %s वर्ग किमी, परिवर्तन %s वर्ग किमी।",nonoise:"यो फाइलमा शोर जाँच दर्ज छैन।",
+sim:"यो फाइल नक्कली (simulated) भनेर चिनो लगाइएको छ। यसलाई वास्तविक विश्लेषणका रूपमा नदेखाउनुहोस्।",
+namesNone:"कुनै बस्ती सम्भावित रूपमा अलग भएको भनेर सूचीबद्ध छैन।",namesTrunc:"सूची छोट्याइएको छ; पूरा सूची नतिजा फाइलमा छ।",
+bad:"यो FloodResQ को results.json जस्तो देखिँदैन।",
+prov:"Sentinel-1 ट्र्याक %s (%s), अघि %s, पछि %s; OSM स्न्यापसट %s (%s); संस्करण %s; तयार: %s UTC।",verified:"तत्व-तत्व जाँचिएको",unverified:"यो फाइलमा मिति प्रमाणित छैन",
+r:{flood:{water_detected:"रडार तुलना (ट्र्याक %s, अघि %s, पछि %s) ले करिब %s वर्ग किमी सम्भावित खुला पानी देखाउँछ।",no_water_detected:"रडार तुलना (ट्र्याक %s, अघि %s, पछि %s) मा शोरको स्तरभन्दा माथि खुला पानी भेटिएन (%s वर्ग किमी चिनो लागेको)।",inconclusive:"रडार तुलना (ट्र्याक %s, अघि %s, पछि %s) खुला पानीबारे निष्कर्षहीन छ (%s वर्ग किमी चिनो लागेको)।",unknown:"रडार तुलना (ट्र्याक %s, अघि %s, पछि %s) ले करिब %s वर्ग किमी चिनो लगायो।"},
+change:" यसले करिब %s वर्ग किमी सम्भावित सतह परिवर्तन पनि देखाउँछ; यो रडारको सम्भावना मात्र हो, पुष्टि भएको भग्नावशेष होइन।",est:" यी अनुमान मात्र हुन्, पुष्टि भएको क्षति होइन।",
+dmg:"घटनाअघिको OpenStreetMap अनुसार %s भवन (कुल %s मध्ये) र %s किमी सडक (कुल %s किमी मध्ये) चिनो लागेको क्षेत्रभित्र पर्न सक्छन्; %s पुल (कुल %s मध्ये) सम्भावित रूपमा प्रभावित हुन सक्छन्।",
+acc:"सडक सञ्जाल विश्लेषणमा %s बस्ती जाँचिए; तीमध्ये %s बस्तीले नजिकको अस्पताल वा शहरसम्मको सडक सम्पर्क गुमाएको हुन सक्छ।",likely:" (केवल खुला पानी गन्दा %s)",list:" सम्भावित रूपमा अलग भएका बस्ती: %s।",
+oth:" %s बस्ती घटनाअघि नै सडक नक्सामा जोडिएका थिएनन् र %s बस्ती नक्सांकित सडकबाट टाढा भएकाले जाँच्न सकिएन।"}}
+};
+/*PURE-START*/
+const DEVA=/[\u0900-\u097f]/;
+function fmt(x){return x===null||x===undefined?"n/a":Number.isInteger(x)?String(x):Number(x).toFixed(2)}
+function fk(x){return x===null||x===undefined?"n/a":Number(x).toFixed(2)}
+function sf(s,...a){let i=0;return s.replace(/%s/g,()=>a[i++])}
+function nameOf(it,lang){if(lang==="ne"){for(const k of["name_ne","name"])if(it[k]&&DEVA.test(it[k]))return it[k];return it.name_en||it.name_ne||it.name||""}return it.name_en||it.name||""}
+function norm(r){
+  if(!r||typeof r!=="object"||!r.meta||!r.flood)return null;
+  const f=r.flood,d=r.damage||{},a=r.access||{},m=r.meta,v2=r.schema_version>=2;
+  const up=f.change_increase_km2,dn=f.change_decrease_km2;
+  const change=v2?((up||0)+(dn||0)):(f.debris_candidate_km2??null);
+  const ev=r.evidence||{};
+  return{meta:m,verdict:ev.verdict||"unknown",confidence:ev.confidence||null,reasons:(ev.reasons||[]).map(x=>x.code),
+    water:f.water_km2,change:change,ctrlW:v2?f.control_water_km2:null,ctrlC:v2?f.control_change_km2:(f.control_flagged_km2??null),
+    bHit:v2?d.buildings_in_flagged_area:d.buildings_in_hazard,bTot:d.buildings_total,
+    rHit:v2?d.roads_in_flagged_area_km:d.roads_blocked_km,rTot:d.roads_total_km,
+    brHit:d.bridges_possibly_hit,brTot:d.bridges_total,
+    sTot:a.settlements_total,cut:v2?a.possibly_cut_off:a.cut_off,likely:v2?a.likely_cut_off:null,
+    unc:a.unconnected_before_event,nor:a.not_on_road_network,
+    names:(v2?a.possibly_cut_off_names:a.cut_off_names)||[],trunc:!!(v2?a.possibly_cut_off_names_truncated:a.cut_off_names_truncated),
+    verified:m.osm_snapshot_verified===true,sim:m.data_is_simulated===true,limits:r.limitations||null};
+}
+function reportText(n,lang){
+  const t=T[lang].r,m=n.meta,F=fmt,K=fk;
+  let a=sf(t.flood[n.verdict]||t.flood.unknown,m.orbit_track,m.pre_date,m.post_date,K(n.water));
+  if(n.change!==null&&n.change!==undefined)a+=sf(t.change,K(n.change));
+  a+=t.est;
+  const b=sf(t.dmg,F(n.bHit),F(n.bTot),K(n.rHit),K(n.rTot),F(n.brHit),F(n.brTot));
+  let c=sf(t.acc,F(n.sTot),F(n.cut));
+  if(n.likely!==null&&n.likely!==undefined)c+=sf(t.likely,F(n.likely));
+  c+=".";
+  const nm=n.names.map(x=>nameOf(x,lang)).filter(Boolean).join(", ");
+  if(nm)c+=sf(t.list,nm);
+  if(n.unc!==undefined&&n.nor!==undefined)c+=sf(t.oth,F(n.unc),F(n.nor));
+  return[a,b,c];
+}
+/*PURE-END*/
+let lang="en",N=null;
+const $=id=>document.getElementById(id);
+function el(tag,txt,cls){const e=document.createElement(tag);if(txt!==undefined)e.textContent=txt;if(cls)e.className=cls;return e}
+function render(){
+  const t=T[lang];
+  document.documentElement.lang=lang;
+  document.querySelectorAll("[data-i]").forEach(e=>{const v=t[e.dataset.i];if(typeof v==="string")e.textContent=v});
+  $("b-en").setAttribute("aria-pressed",lang==="en");$("b-ne").setAttribute("aria-pressed",lang==="ne");
+  const st=$("steps");st.textContent="";t.steps.forEach(s=>st.appendChild(el("li",s)));
+  const ul=$("lims");ul.textContent="";((N&&N.limits&&lang==="en")?N.limits:t.lims).forEach(s=>ul.appendChild(el("li",s)));
+  if(!N)return;
+  $("out").hidden=false;
+  $("simwarn").hidden=!N.sim;$("simwarn").textContent=t.sim;
+  const v=$("verdict");v.textContent="";
+  v.appendChild(el("b",t.verdict[N.verdict]||t.verdict.unknown));
+  if(N.confidence)v.appendChild(el("span"," ("+t.conf+": "+N.confidence+")"));
+  N.reasons.forEach(c=>v.appendChild(el("div","• "+(t.reasons[c]||c))));
+  const mt=$("metrics");mt.textContent="";
+  [[t.m.water,fk(N.water),""],[t.m.change,fk(N.change),""],[t.m.bld,fmt(N.bHit),t.of+" "+fmt(N.bTot)],[t.m.road,fk(N.rHit),t.of+" "+fk(N.rTot)],[t.m.br,fmt(N.brHit),t.of+" "+fmt(N.brTot)],[t.m.cut,fmt(N.cut),t.of+" "+fmt(N.sTot)]]
+    .forEach(([l,val,s])=>{const d=el("div",undefined,"m");d.appendChild(el("small",l));d.appendChild(el("b",val));d.appendChild(el("small",s));mt.appendChild(d)});
+  $("noise").textContent=(N.ctrlW!==null||N.ctrlC!==null)?sf(t.noise,fk(N.ctrlW),fk(N.ctrlC)):t.nonoise;
+  const nl=$("names");nl.textContent="";
+  N.names.forEach(x=>nl.appendChild(el("li",nameOf(x,lang))));
+  $("namesNote").textContent=N.names.length?(N.trunc?t.namesTrunc:""):t.namesNone;
+  const rp=$("report");rp.textContent="";reportText(N,lang).forEach(p=>rp.appendChild(el("p",p)));
+  const m=N.meta;
+  $("prov").textContent=sf(t.prov,m.orbit_track,m.orbit_direction,m.pre_date,m.post_date,m.osm_snapshot,N.verified?t.verified:t.unverified,m.software_version,m.generated_utc);
+}
+function load(file){
+  const err=$("err");err.hidden=true;
+  const rd=new FileReader();
+  rd.onload=()=>{try{const n=norm(JSON.parse(rd.result));if(!n)throw 0;N=n;render()}catch(e){N=null;$("out").hidden=true;err.textContent=T[lang].bad;err.hidden=false}};
+  rd.readAsText(file);
+}
+$("b-en").onclick=()=>{lang="en";render()};$("b-ne").onclick=()=>{lang="ne";render()};
+$("pick").onclick=()=>$("file").click();
+$("file").onchange=e=>{if(e.target.files[0])load(e.target.files[0])};
+const dz=$("drop");
+["dragenter","dragover"].forEach(x=>dz.addEventListener(x,e=>{e.preventDefault();dz.classList.add("over")}));
+["dragleave","drop"].forEach(x=>dz.addEventListener(x,e=>{e.preventDefault();dz.classList.remove("over")}));
+dz.addEventListener("drop",e=>{const f=e.dataTransfer.files[0];if(f)load(f)});
+$("print").onclick=()=>window.print();
+render();
+</script>
+</body>
+</html>
