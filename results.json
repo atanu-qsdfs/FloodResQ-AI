@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "event_date": "2026-08-26",
+    "bbox": [
+      85.1,
+      27.85,
+      85.45,
+      28.3
+    ],
+    "osm_snapshot": "2026-07-27",
+    "orbit_track": 85,
+    "orbit_direction": "ASCENDING",
+    "pre_scene": "S1D_IW_GRDH_1SDV_20260816T122141_20260816T122206_004151_007980_C3AB.SAFE",
+    "post_scene": "S1D_IW_GRDH_1SDV_20260828T122141_20260828T122206_004326_007FA4_01B4.SAFE",
+    "pre_date": "2026-08-16",
+    "post_date": "2026-08-28",
+    "control_scene": "S1D_IW_GRDH_1SDV_20260804T122140_20260804T122205_003976_00737A_6F58.SAFE",
+    "pixel_size_m": 30.0,
+    "generated_utc": "2026-10-11 08:50",
+    "data_is_simulated": false,
+    "software_version": "0.1.0"
+  },
+  "parameters": {
+    "multilook": 3,
+    "water_db": -18.0,
+    "pre_bright_db": -16.0,
+    "drop_db": 3.0,
+    "change_db": 3.0,
+    "vh_change_db": 2.0,
+    "max_slope_water": 12.0,
+    "max_slope_debris": 25.0,
+    "min_pixels": 8,
+    "corridor_m": 400.0
+  },
+  "flood": {
+    "water_km2": 0.0,
+    "debris_candidate_km2": 0.82,
+    "control_flagged_km2": 0.07
+  },
+  "damage": {
+    "buildings_total": 106980,
+    "buildings_in_water": 0,
+    "buildings_in_debris": 328,
+    "buildings_in_hazard": 328,
+    "roads_total_km": 2258.34,
+    "roads_blocked_km": 5.91,
+    "bridges_total": 95,
+    "bridges_possibly_hit": 11
+  },
+  "access": {
+    "targets_matched_to_roads": 9,
+    "settlements_total": 140,
+    "cut_off": 3,
+    "reachable": 88,
+    "unconnected_before_event": 12,
+    "not_on_road_network": 37,
+    "cut_off_names": [
+      {
+        "name": "बेत्रावती",
+        "name_ne": "बेत्रावती",
+        "name_en": "Betrawati"
+      },
+      {
+        "name": "देवीघाट",
+        "name_ne": "देवीघाट",
+        "name_en": "Devighat"
+      },
+      {
+        "name": "热索",
+        "name_ne": "",
+        "name_en": "Resuo"
+      }
+    ],
+    "cut_off_names_truncated": false
+  },
+  "limitations": [
+    "Sentinel satellites revisit an area only every few days, so this cannot warn of a sudden glacier collapse.",
+    "Thresholds are simple rules, not tuned on this event; radar shadow, layover, snow, rain and soil moisture can create false flags or hide real damage.",
+    "'Debris/change' is only a statistical radar change near mapped rivers, not confirmed debris.",
+    "Roads, buildings and bridges come from pre-event OpenStreetMap, which is incomplete in remote areas; unmapped roads or paths are invisible.",
+    "Cut-off status uses roads only; it ignores footpaths, helicopters, temporary repairs and road condition on the ground.",
+    "Educational prototype, not an operational tool; all results need field confirmation."
+  ]
+}
