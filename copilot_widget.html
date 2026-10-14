@@ -1,0 +1,45 @@
+<style>
+#frq-launch{position:fixed;right:22px;bottom:20px;z-index:99999;background:#102d50;color:#fff;border:0;border-radius:26px;padding:13px 18px;font:600 14px Arial;cursor:pointer;box-shadow:0 4px 18px #0004}
+#frq-panel{display:none;position:fixed;right:18px;bottom:75px;width:min(400px,calc(100vw - 32px));height:min(540px,78vh);z-index:99999;background:#fff;color:#172033;border:1px solid #cbd5e1;border-radius:16px;box-shadow:0 8px 28px #0004;overflow:hidden;font:14px Arial,sans-serif}
+#frq-panel header{padding:14px 16px;background:#102d50;color:#fff;font-weight:700}
+#frq-panel header small{display:block;font-weight:400;opacity:.9;margin-top:5px}
+#frq-log{height:calc(100% - 160px);overflow:auto;padding:12px;background:#f8fafc}
+.frq-bubble{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;padding:10px 12px;margin:8px 0;border-radius:10px}
+.frq-bot{background:#e9eef5;margin-right:16px}.frq-human{background:#dceafe;margin-left:24px}
+#frq-form{padding:10px;border-top:1px solid #ddd;background:#fff}
+#frq-q{box-sizing:border-box;width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px}
+#frq-row{display:flex;gap:8px;margin-top:8px}#frq-lang{flex:1;min-width:0;padding:8px}
+#frq-send{padding:9px 16px;background:#102d50;color:#fff;border:0;border-radius:8px;cursor:pointer}
+#frq-status{font-size:11px;color:#475569;padding-top:6px}
+</style>
+<button id="frq-launch" type="button">✦ Ask FloodResQ AI</button>
+<section id="frq-panel" aria-label="FloodResQ AI Copilot">
+<header>FloodResQ AI Copilot<small>Answers are checked against this run's results · Estimates, not confirmed damage · Educational prototype</small></header>
+<div id="frq-log" aria-live="polite"><div class="frq-bubble frq-bot">Hello! Ask about the analysis, possible impacts, or limitations.</div></div>
+<form id="frq-form">
+<input id="frq-q" maxlength="700" required placeholder="Ask about the results…" autocomplete="off">
+<div id="frq-row"><select id="frq-lang" aria-label="Answer language"><option value="en">English</option><option value="ne">नेपाली (Nepali)</option></select><button id="frq-send" type="submit">Send</button></div>
+<div id="frq-status" role="status">Ready</div>
+</form>
+</section>
+<script>
+(function(){
+const launch=document.getElementById('frq-launch'),panel=document.getElementById('frq-panel');
+const log=document.getElementById('frq-log'),form=document.getElementById('frq-form'),q=document.getElementById('frq-q');
+const lang=document.getElementById('frq-lang'),send=document.getElementById('frq-send'),status=document.getElementById('frq-status');
+launch.addEventListener('click',()=>panel.style.display=panel.style.display==='block'?'none':'block');
+function bubble(t,who){const d=document.createElement('div');d.className='frq-bubble '+(who==='human'?'frq-human':'frq-bot');d.textContent=t;log.appendChild(d);log.scrollTop=log.scrollHeight;}
+form.addEventListener('submit',async e=>{
+ e.preventDefault();const question=q.value.trim();if(!question)return;
+ bubble(question,'human');q.value='';send.disabled=true;status.textContent='Thinking…';
+ const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),90000);
+ try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,language:lang.value}),signal:ctrl.signal});
+ const raw=await r.text();let d=null;try{d=JSON.parse(raw);}catch(_){}
+ if(!d)throw new Error('the server sent an unexpected reply (HTTP '+r.status+'). It may be starting up; please try again in a minute.');
+ if(!r.ok||d.error)throw new Error(d.error||('request failed (HTTP '+r.status+')'));
+ bubble(d.answer,'bot');}
+ catch(err){bubble('Copilot error: '+(err&&err.name==='AbortError'?'the request took too long. Please try again.':(err&&err.message)||'unknown error'),'bot');}
+ finally{clearTimeout(timer);send.disabled=false;status.textContent='Ready';}
+});
+})();
+</script>

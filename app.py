@@ -2,7 +2,7 @@
 FloodResQ AI - small web server: serves dashboard.html and a copilot chat that is CHECKED before it answers.
 
 Needs:  flask, gunicorn, google-genai, numpy, requests (see requirements.txt)
-        and floodresq.py + results.json + dashboard.html in the same folder as this file.
+        and floodresq.py + results.json + dashboard.html + copilot_widget.html in the same folder as this file.
 
 Local run:   GEMINI_API_KEY=your_key  python app.py          (the key stays on the server; never put it in any file)
 Render run:  gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
@@ -156,10 +156,24 @@ def gemini_llm():
 _page = {}
 
 
+def add_copilot_widget(html):
+    """The notebook's dashboard.html has the map but NOT the chat button. Insert copilot_widget.html once, before </body>.
+    A dashboard that already contains the widget is returned unchanged."""
+    if "frq-launch" in html:
+        return html
+    widget = (BASE / "copilot_widget.html").read_text(encoding="utf-8")
+    i = html.rfind("</body>")
+    if i == -1:
+        i = html.rfind("</html>")
+    if i == -1:
+        return html + widget
+    return html[:i] + widget + html[i:]
+
+
 @app.get("/")
 def home():
     if "html" not in _page:
-        _page["html"] = (BASE / "dashboard.html").read_text(encoding="utf-8")
+        _page["html"] = add_copilot_widget((BASE / "dashboard.html").read_text(encoding="utf-8"))
     return Response(_page["html"], mimetype="text/html")
 
 

@@ -1928,6 +1928,8 @@ def report_sections(results, lang="en"):
         limits = ("Limits: Sentinel satellites revisit an area only every few days, so they cannot warn of a sudden event. Road condition on the ground was not "
                   "observed and OpenStreetMap is incomplete in remote areas. The results have not been validated against an independent reference map. "
                   "This is an educational prototype, not an operational tool; results need field confirmation.")
+    if ev["verdict"] == "water_detected" and reasons:      # say WHY confidence is low (e.g. optical imagery disagrees)
+        head += (" सावधानीका कारण: %s।" if lang == "ne" else " Reasons for caution: %s.") % reasons
     if ev["verdict"] == "inconclusive":
         if lang == "ne":
             damage = "प्रमाण अनिर्णायक भएकाले तलका आँकडा चिन्हित पिक्सेल साँच्चै प्रभावित भए मात्र लागू हुन्छन्। " + damage

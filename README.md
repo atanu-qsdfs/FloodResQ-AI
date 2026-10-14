@@ -19,6 +19,7 @@ Results are unvalidated estimates; "potentially affected" never means "confirmed
 | `FloodResQ_AI_full.ipynb` | The Colab notebook. Run cells top to bottom. |
 | `app.py` | The Flask web server (Render): serves `dashboard.html` and the checked Copilot at `/api/chat`. |
 | `dashboard.html`, `results.json` | The interactive map and the numbers the Copilot may use (produced by the notebook). |
+| `copilot_widget.html` | The chat button and panel. `app.py` adds it automatically if the notebook's `dashboard.html` does not contain it. |
 | `requirements.txt` | Dependencies of the web app only (the notebook installs its own extras in Colab). |
 | `tests/` | Unit tests, synthetic benchmark, notebook glue test. |
 | `VALIDATION_REPORT.md` | What was tested, what was not, and a table to fill with real scores. |

@@ -1,4 +1,5 @@
 {
+  "schema_version": 2,
   "meta": {
     "event_date": "2026-08-26",
     "bbox": [
@@ -14,71 +15,143 @@
     "post_scene": "S1D_IW_GRDH_1SDV_20260828T122141_20260828T122206_004326_007FA4_01B4.SAFE",
     "pre_date": "2026-08-16",
     "post_date": "2026-08-28",
+    "gap_days": 12,
     "control_scene": "S1D_IW_GRDH_1SDV_20260804T122140_20260804T122205_003976_00737A_6F58.SAFE",
     "pixel_size_m": 30.0,
-    "generated_utc": "2026-10-11 08:50",
+    "dem_source": "Copernicus GLO-30 DEM",
+    "dem_native_resolution_m": 30,
+    "osm_snapshot_verified": true,
+    "generated_utc": "2026-10-14 09:19",
     "data_is_simulated": false,
-    "software_version": "0.1.0"
+    "software_version": "0.2.3",
+    "config_hash": "9417da769384fe3d"
   },
   "parameters": {
-    "multilook": 3,
-    "water_db": -18.0,
+    "speckle_filter": "lee",
+    "filter_size": 3,
+    "enl_native": 4.4,
+    "water_vv_db": -18.0,
+    "water_vh_db": -24.0,
+    "grow_db": 2.0,
     "pre_bright_db": -16.0,
     "drop_db": 3.0,
+    "k_sigma": 3.0,
     "change_db": 3.0,
     "vh_change_db": 2.0,
+    "unstable_db": 3.0,
     "max_slope_water": 12.0,
-    "max_slope_debris": 25.0,
-    "min_pixels": 8,
-    "corridor_m": 400.0
+    "max_slope_change": 25.0,
+    "max_hand_m": 15.0,
+    "min_incidence": 15.0,
+    "max_incidence": 65.0,
+    "corridor_m": 400.0,
+    "water_corridor_m": 1000.0,
+    "min_pixels_water": 4,
+    "min_pixels_change": 8,
+    "builtup_density_per_km2": 300.0,
+    "builtup_window_px": 5,
+    "normalise_bias": true,
+    "min_water_km2": 0.02,
+    "max_control_ratio": 0.5,
+    "min_corridor_valid": 0.7,
+    "max_noise_sigma_db": 2.5
+  },
+  "quality": {
+    "corridor_valid_fraction": 0.778,
+    "radiometric_bias_vv_db": 0.01,
+    "noise_sigma_theory_db": 0.98,
+    "noise_sigma_empirical_db": 1.3,
+    "change_threshold_db": 3.91,
+    "terrain_geometry_bands_used": true,
+    "s2": {
+      "usable": true,
+      "cloud_free_fraction_of_corridor": 0.466,
+      "cloud_free_fraction_of_radar_water": 1.0,
+      "agreement": 0.0,
+      "optical_new_water_km2": 0.01,
+      "cloud_fraction_pre": 0.908,
+      "cloud_fraction_post": 0.563
+    }
+  },
+  "evidence": {
+    "verdict": "water_detected",
+    "confidence": "low",
+    "reasons": [
+      {
+        "code": "optical_disagrees"
+      }
+    ],
+    "validated_against_reference": false
   },
   "flood": {
-    "water_km2": 0.0,
-    "debris_candidate_km2": 0.82,
-    "control_flagged_km2": 0.07
+    "water_km2": 0.05,
+    "change_increase_km2": 0.01,
+    "change_decrease_km2": 0.17,
+    "permanent_water_km2": 0.45,
+    "builtup_not_assessed_km2": 35.07,
+    "unstable_not_assessed_km2": 5.92,
+    "control_water_km2": 0.01,
+    "control_change_km2": 0.04
   },
   "damage": {
     "buildings_total": 106980,
     "buildings_in_water": 0,
-    "buildings_in_debris": 328,
-    "buildings_in_hazard": 328,
+    "buildings_in_change": 2,
+    "buildings_in_flagged_area": 2,
     "roads_total_km": 2258.34,
-    "roads_blocked_km": 5.91,
+    "roads_in_flagged_area_km": 0.62,
+    "roads_in_water_km": 0.03,
     "bridges_total": 95,
-    "bridges_possibly_hit": 11
+    "bridges_possibly_hit": 1
   },
   "access": {
+    "settlements_total": 139,
     "targets_matched_to_roads": 9,
-    "settlements_total": 140,
-    "cut_off": 3,
-    "reachable": 88,
+    "possibly_cut_off": 0,
+    "likely_cut_off": 0,
     "unconnected_before_event": 12,
     "not_on_road_network": 37,
-    "cut_off_names": [
-      {
-        "name": "बेत्रावती",
-        "name_ne": "बेत्रावती",
-        "name_en": "Betrawati"
-      },
-      {
-        "name": "देवीघाट",
-        "name_ne": "देवीघाट",
-        "name_en": "Devighat"
-      },
-      {
-        "name": "热索",
-        "name_ne": "",
-        "name_en": "Resuo"
-      }
-    ],
-    "cut_off_names_truncated": false
+    "road_components_before_event": 153,
+    "possibly_cut_off_names": [],
+    "possibly_cut_off_names_truncated": false,
+    "likely_cut_off_names": []
   },
+  "trace": null,
+  "sources": [
+    {
+      "id": "S1",
+      "name": "Copernicus Sentinel-1 GRD (IW, VV+VH), processed by Sentinel Hub to terrain-flattened gamma0 (Copernicus Data Space Ecosystem)",
+      "scenes": [
+        "S1D_IW_GRDH_1SDV_20260816T122141_20260816T122206_004151_007980_C3AB.SAFE",
+        "S1D_IW_GRDH_1SDV_20260828T122141_20260828T122206_004326_007FA4_01B4.SAFE",
+        "S1D_IW_GRDH_1SDV_20260804T122140_20260804T122205_003976_00737A_6F58.SAFE"
+      ]
+    },
+    {
+      "id": "DEM",
+      "name": "Copernicus GLO-30 DEM",
+      "native_resolution_m": 30
+    },
+    {
+      "id": "OSM",
+      "name": "OpenStreetMap contributors (Overpass API), data as of 2026-07-27"
+    },
+    {
+      "id": "S2",
+      "name": "Copernicus Sentinel-2 L2A (optical support only)"
+    }
+  ],
   "limitations": [
-    "Sentinel satellites revisit an area only every few days, so this cannot warn of a sudden glacier collapse.",
-    "Thresholds are simple rules, not tuned on this event; radar shadow, layover, snow, rain and soil moisture can create false flags or hide real damage.",
-    "'Debris/change' is only a statistical radar change near mapped rivers, not confirmed debris.",
-    "Roads, buildings and bridges come from pre-event OpenStreetMap, which is incomplete in remote areas; unmapped roads or paths are invisible.",
-    "Cut-off status uses roads only; it ignores footpaths, helicopters, temporary repairs and road condition on the ground.",
-    "Educational prototype, not an operational tool; all results need field confirmation."
-  ]
+    "Sentinel-1 revisits an area only every few days, so this cannot warn of a sudden event such as a glacial lake outburst.",
+    "Radar water detection can miss narrow channels (narrower than a pixel), flooded vegetation and flooded built-up areas, and can give false flags from radar shadow, layover, wet snow, rain and soil moisture.",
+    "'Surface change' is a statistical radar change near mapped rivers. It is not confirmed debris, and built-up and unstable pixels were not assessed.",
+    "Roads, buildings and bridges come from pre-event OpenStreetMap, which is incomplete in remote areas; unmapped roads and paths are invisible.",
+    "Cut-off status uses mapped roads only: it ignores footpaths, helicopters, repairs and the real road condition, and it depends on the flagged pixels being truly impassable.",
+    "The thresholds were not validated against reference flood maps. Treat all results as unvalidated estimates.",
+    "Educational prototype, not an operational tool; every result needs field confirmation."
+  ],
+  "validation": {
+    "validated_against_reference": false,
+    "note": "No comparison with an independent reference map has been run for these numbers."
+  }
 }
