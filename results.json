@@ -74,14 +74,26 @@
     }
   },
   "evidence": {
-    "verdict": "water_detected",
-    "confidence": "low",
+    "verdict": "inconclusive",
+    "confidence": null,
     "reasons": [
       {
         "code": "optical_disagrees"
       }
     ],
-    "validated_against_reference": false
+    "validated_against_reference": false,
+    "previous": {
+      "verdict": "water_detected",
+      "confidence": "low",
+      "reasons": [
+        {
+          "code": "optical_disagrees"
+        }
+      ],
+      "rules_version": "0.2.3"
+    },
+    "rules_version": "0.3.0",
+    "note": "Evidence rules of software 0.3.0 were applied to the stored numbers of this same run; no imagery was reprocessed."
   },
   "flood": {
     "water_km2": 0.05,
@@ -148,6 +160,7 @@
     "Roads, buildings and bridges come from pre-event OpenStreetMap, which is incomplete in remote areas; unmapped roads and paths are invisible.",
     "Cut-off status uses mapped roads only: it ignores footpaths, helicopters, repairs and the real road condition, and it depends on the flagged pixels being truly impassable.",
     "The thresholds were not validated against reference flood maps. Treat all results as unvalidated estimates.",
+    "Sentinel-2 images are least-cloud mosaics over a date window, so the optical 'before'/'after' pictures may combine several acquisition days; the optical water class (SCL) can also miss muddy water. Optical imagery is a cross-check, not proof either way.",
     "Educational prototype, not an operational tool; every result needs field confirmation."
   ],
   "validation": {

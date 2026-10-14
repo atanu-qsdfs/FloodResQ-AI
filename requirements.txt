@@ -1,4 +1,4 @@
-# Web app (Render). Colab installs its own extra packages (rasterio, geopandas, folium, ...) inside the notebook.
+# Web app (Render). The Colab notebook installs its own extra packages (rasterio, geopandas, folium, ...).
 flask>=3.0
 gunicorn>=22.0
 google-genai>=1.0

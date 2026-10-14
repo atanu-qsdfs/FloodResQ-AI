@@ -1,49 +1,41 @@
-# FloodResQ AI v0.2.0 - Validation report
+# FloodResQ AI v0.3.0 - Validation report
 
-**Status: NOT validated on real data.** No precision, recall, F1 or IoU score exists for any real flood. Nothing below should be quoted as real-world accuracy.
+**Status: NOT validated on real data.** No precision, recall, F1 or IoU exists for any real flood. Do not quote accuracy.
 
-## 1. What was actually run (author's sandbox, no internet)
-Python 3.12.3, numpy 2.4.4, scipy 1.17.1, pandas 3.0.2, networkx 3.6.1, matplotlib 3.10.8, requests 2.33.1.
+## 1. Automated tests that were actually run (Python 3.12, numpy, scipy, Pillow, matplotlib, Flask; no internet)
+Command: `python -m unittest discover -s tests -p "test_*.py"` -> **57 tests, all passed**. (First run: 4 failed; two were real bugs
+(a `%` formatting crash in the map header panel, and the claim checker rejecting "not confirmed damaged"), two were wrong tests; all fixed.)
 
-| Check | Result |
+| File | What it checks |
 |---|---|
-| Unit tests (`python -m unittest discover -s tests`) | **60 tests, all passed** |
-| Notebook glue test (`tests/e2e_notebook_glue.py`): notebook sections 8-16 on synthetic inputs | Passed (all cells ran; results, EN/NE report, dashboard (stub), ZIP) |
-| Synthetic old-vs-new benchmark (`tests/benchmark_synthetic.py`, 5 random seeds) | See section 2 |
+| `test_detection.py` | synthetic radar: flood found, no-flood gives ~nothing, permanent water is not new flood, no-data never flagged, steep ground excluded, masked town not flagged, blob counts reported |
+| `test_evidence.py` | verdict rules incl. the real run's numbers -> inconclusive; cloud-covered water cannot be contradicted; never "high"/validated; `s2_support` ignores no-data; claim/number checker |
+| `test_results_data.py` | the shipped `results.json` schema, not simulated, not validated; old layout detected; invalid values rejected; dashboard and results are the same run (time, water area, dates, layer names, identical overlay bounds); Sentinel-2 no-data is transparent |
+| `test_imagery.py` | NaN/no-data transparency, block-average shrink, output size, raster masks |
+| `test_api.py` | JSON (never HTML) for bad JSON, empty/long/array bodies, 404/405, rate limit; missing/corrupt/wrong-schema `results.json`; missing `dashboard.html`; no model key; model failure; invented numbers and over-claims rejected; API key never appears in served pages; `/api/status` |
 
-What the 60 unit tests cover: grid maths; DEM tile names (GLO-30/GLO-90) and tile selection; **DEM resampling alignment** (a linear elevation surface is reproduced exactly at every cell centre; nodata never becomes elevation; outside the source is NaN); slope; height above river; speckle filter (variance down, mean unbiased, invalid pixels ignored); detector (flood found, no-flood gives almost nothing, permanent water is not flood, steep or high ground excluded, brightness offset removed, built-up noise not flagged as change, sign-consistent change); evidence verdicts (detected / none / inconclusive, never "high" confidence); road network (newly cut-off vs already unconnected vs not on network, blocked length is the real flagged length, bridges sampled along their whole line, routes); results schema; EN/NE report content; every number in the reports exists in `results.json`; copilot rejects invented numbers and over-claims; freeze/verify; metrics (NaN when undefined); scene-pair logic by track AND direction; Overpass failover, caching, snapshot-date verification, bounded waiting.
-
-## 2. Synthetic benchmark (invented data: gamma speckle, an invented river, flood and town)
-Mean of 5 seeds. "old" = the v0.1 detector copied from your original code; "new" = v0.2.
-
-| Scenario | Metric | old | new |
-|---|---|---|---|
-| Wide flood (about 300 m wide) | water recall / precision | 0.79 / 1.00 | 1.00 / 0.97 |
-| Narrow flooded channel (about 2 pixels) | water recall / precision | 0.32 / 1.00 | 1.00 / 0.93 |
-| No flood | false water (km2) | 0.002 | 0.018 |
-| Bright, variable town (all scenarios) | false "change" inside the town (km2) | 0.23-0.27 | 0.00 |
-
-Reading it honestly: it supports the explanation that the old 3x3 box average over 30 m pixels loses narrow water and that unmasked built-up areas produce blocky false change. It also shows the new detector has a **slightly higher false-water area on a flood-free scene** (0.018 vs 0.002 km2; this is below the 0.02 km2 evidence minimum, so the verdict stays "no_water_detected"). The synthetic water is far darker than the land (-22 vs -10 dB), which real scenes do not guarantee, so real recall will be lower.
-
-## 3. What was NOT tested (needs you, in Colab)
-* Copernicus catalogue search, login, Sentinel Hub downloads (including the optional `localIncidenceAngle` / `shadowMask` bands: if rejected, the code falls back and says so).
-* The AWS DEM download and reading with rasterio (the resampling maths is tested; the file reading is not). Tile URLs follow the documented public bucket layout (`copernicus-dem-30m`, `copernicus-dem-90m`) but were not fetched.
-* Overpass against the real servers (failover and timestamp logic are tested against a simulated server).
-* Real folium rendering (a recording stub was used; the dashboard has never been opened in a browser by the author), geopandas/rasterio polygon export, and the EMSR927 evaluation code.
-* Everything on your real Nepal data, including why the original water mask was empty (the notebook's diagnosis table (section 8b) tells you).
+## 2. What was NOT tested
+* Colab pipeline end to end, Copernicus login/downloads, DEM download, Overpass (no internet/credentials here).
+* `make_dashboard` (needs `folium`, `rasterio`; not installed in the test environment). Its v0.3.0 edits were only syntax-checked.
+* A real Gemini call (no key here); Render deployment; the browser rendering of the page (no browser run).
 * Nepali wording quality (needs a native reviewer).
+* The earlier 60-test suite / benchmark mentioned in v0.2.0 documents was not in the files supplied, so it could not be re-run and is not claimed.
+
+## 3. Findings about the stored run (from `dashboard.html` and `results.json`, not from re-processing imagery)
+* Radar water 0.05 km2 (about 55 px) in 6 separate blobs in the southern part of the box; noise check flagged 0.01 km2 (about 11 px).
+* Cloud-free Sentinel-2 covered 100% of that radar water and classified none as water; optical "new water" 0.01 km2.
+* Therefore the candidate is unconfirmed. It is not proven false either: muddy water, mixed acquisition dates in the optical mosaic and 30 m pixels all limit the optical check.
+* Verdict (v0.3.0 rules): **inconclusive**. The numbers for buildings, roads, bridges and settlements are conditional on those pixels being real (2 buildings, 0.62 km of road, 1 bridge, 0 cut-off settlements).
 
 ## 4. How to validate for real
-1. Run the full notebook on your event. Check the verdict, the diagnosis table and the control comparison.
-2. Look at the satellite basemap along the river by eye. Write down what you see.
-3. Section 15 **once**, after freezing: download the EMSR927 flood-extent vector and AOI yourself; it scores radar **water only** inside the AOI and refuses to run if the frozen results changed.
-4. Fill in the table (copy the numbers exactly as printed, including bad ones):
+1. Re-run the notebook with v0.3.0 (new numbers, same method); read the diagnosis table and the pair scan.
+2. Look at the Esri satellite basemap along the river by eye and write down what you see.
+3. Section 15 once, after freezing: download the EMSR927 flood extent and AOI yourself; it scores radar water only.
+4. Fill in the table with the exact printed numbers (including bad ones):
 
 | Product | AOI area (km2) | TP px | FP px | FN px | Precision | Recall | F1 | IoU |
 |---|---|---|---|---|---|---|---|---|
 | EMSR927 flood extent | | | | | | | | |
 
-5. Optionally repeat on a second, independently labelled event (for example a public Sentinel-1 flood dataset) with unchanged thresholds, and report both. One event is not enough to claim the method generalises.
-
 ## 5. Prototype vs operational system
-This is a student prototype: unvalidated thresholds, 30 m pixels, incomplete OSM, no ground truth, no uncertainty calibration, no field confirmation, no security or reliability engineering. It must not be used to decide where to send rescuers.
+Student prototype: unvalidated thresholds, 30 m pixels, incomplete OSM, no ground truth, no field confirmation. It must not be used to decide where to send rescuers.

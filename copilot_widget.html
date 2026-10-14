@@ -1,6 +1,6 @@
 <style>
-#frq-launch{position:fixed;right:22px;bottom:20px;z-index:99999;background:#102d50;color:#fff;border:0;border-radius:26px;padding:13px 18px;font:600 14px Arial;cursor:pointer;box-shadow:0 4px 18px #0004}
-#frq-panel{display:none;position:fixed;right:18px;bottom:75px;width:min(400px,calc(100vw - 32px));height:min(540px,78vh);z-index:99999;background:#fff;color:#172033;border:1px solid #cbd5e1;border-radius:16px;box-shadow:0 8px 28px #0004;overflow:hidden;font:14px Arial,sans-serif}
+#frq-launch{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:99999;background:#102d50;color:#fff;border:0;border-radius:26px;padding:13px 18px;font:600 14px Arial;cursor:pointer;box-shadow:0 4px 18px #0004}
+#frq-panel{display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:68px;width:min(400px,calc(100vw - 32px));height:min(540px,78vh);z-index:99999;background:#fff;color:#172033;border:1px solid #cbd5e1;border-radius:16px;box-shadow:0 8px 28px #0004;overflow:hidden;font:14px Arial,sans-serif}
 #frq-panel header{padding:14px 16px;background:#102d50;color:#fff;font-weight:700}
 #frq-panel header small{display:block;font-weight:400;opacity:.9;margin-top:5px}
 #frq-log{height:calc(100% - 160px);overflow:auto;padding:12px;background:#f8fafc}
@@ -12,7 +12,7 @@
 #frq-send{padding:9px 16px;background:#102d50;color:#fff;border:0;border-radius:8px;cursor:pointer}
 #frq-status{font-size:11px;color:#475569;padding-top:6px}
 </style>
-<button id="frq-launch" type="button">✦ Ask FloodResQ AI</button>
+<button id="frq-launch" type="button" aria-expanded="false" aria-controls="frq-panel">✦ Ask FloodResQ AI</button>
 <section id="frq-panel" aria-label="FloodResQ AI Copilot">
 <header>FloodResQ AI Copilot<small>Answers are checked against this run's results · Estimates, not confirmed damage · Educational prototype</small></header>
 <div id="frq-log" aria-live="polite"><div class="frq-bubble frq-bot">Hello! Ask about the analysis, possible impacts, or limitations.</div></div>
@@ -27,7 +27,7 @@
 const launch=document.getElementById('frq-launch'),panel=document.getElementById('frq-panel');
 const log=document.getElementById('frq-log'),form=document.getElementById('frq-form'),q=document.getElementById('frq-q');
 const lang=document.getElementById('frq-lang'),send=document.getElementById('frq-send'),status=document.getElementById('frq-status');
-launch.addEventListener('click',()=>panel.style.display=panel.style.display==='block'?'none':'block');
+launch.addEventListener('click',()=>{const open=panel.style.display!=='block';panel.style.display=open?'block':'none';launch.setAttribute('aria-expanded',open);if(open)q.focus();});
 function bubble(t,who){const d=document.createElement('div');d.className='frq-bubble '+(who==='human'?'frq-human':'frq-bot');d.textContent=t;log.appendChild(d);log.scrollTop=log.scrollHeight;}
 form.addEventListener('submit',async e=>{
  e.preventDefault();const question=q.value.trim();if(!question)return;

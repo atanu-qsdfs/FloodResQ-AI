@@ -1,4 +1,4 @@
-# FloodResQ AI v0.2.0 - Mapping flood damage from space (hackathon prototype)
+# FloodResQ AI v0.3.0 - Mapping flood damage from space (hackathon prototype)
 
 IIT Mandi Multimodal AI Hackathon 2026, Track B. **Educational prototype. Not an operational emergency-response system.**
 Results are unvalidated estimates; "potentially affected" never means "confirmed damaged".
@@ -21,7 +21,9 @@ Results are unvalidated estimates; "potentially affected" never means "confirmed
 | `dashboard.html`, `results.json` | The interactive map and the numbers the Copilot may use (produced by the notebook). |
 | `copilot_widget.html` | The chat button and panel. `app.py` adds it automatically if the notebook's `dashboard.html` does not contain it. |
 | `requirements.txt` | Dependencies of the web app only (the notebook installs its own extras in Colab). |
-| `tests/` | Unit tests, synthetic benchmark, notebook glue test. |
+| `tests/` | 57 automated tests (synthetic data, the real `results.json`/`dashboard.html`, and the web API). |
+| `tools/fix_overlay_nodata.py` | One-off display fix for dashboards made before v0.3.0 (makes Sentinel-2 no-data transparent). |
+| `requirements-dev.txt`, `.python-version` | Test dependencies; Python version for Render. |
 | `VALIDATION_REPORT.md` | What was tested, what was not, and a table to fill with real scores. |
 
 ## Run it in Google Colab
@@ -34,14 +36,15 @@ Results are unvalidated estimates; "potentially affected" never means "confirmed
 7. Run sections 10 to 14, download `dashboard.html` and `situation_report.html` (open from a normal folder, not inside a zip, in Chrome).
 8. Section 15 (EMSR927 scoring) last and only once. Section 16 builds `floodresq_outputs.zip`.
 
-Run the tests anywhere with Python: `python -m unittest discover -s tests -p "test_*.py"` (and `python tests/benchmark_synthetic.py`).
+Run the tests on your computer: `pip install -r requirements-dev.txt`, then `python -m unittest discover -s tests -p "test_*.py"`.
 
 ## Web app on Render
 * Start command: `gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120`
 * Environment variable (Render, Environment tab): `GEMINI_API_KEY` (secret, never in GitHub). Optional: `GEMINI_MODEL` (default `gemini-3.5-flash-lite`).
 * Without a key, or if Gemini fails, the Copilot answers from `results.json` only and says so. `/api/chat` always replies with JSON.
 * The Copilot reads both results layouts: the current one (with `evidence`) and the older software-0.1.x layout, for which it says the file comes from an earlier analysis. To get the current layout, re-run the notebook and replace `results.json` and `dashboard.html`.
-* Health check: `/healthz`.
+* Health check: `/healthz`. Deployment check: `/api/status` (which files exist, whether a key is set, whether the map and `results.json` belong to the same run).
+* The server shows the verdict from `results.json` on top of the map, so the map cannot say something different from the results. If the map and `results.json` look like different runs, a red warning appears.
 
 ## Architecture
 ```
@@ -79,8 +82,18 @@ Copernicus Data Space (catalogue + Sentinel Hub Process API)   Copernicus DEM (A
 * **Notebook:** CHECK 4 stopped the run if nothing was flagged (forcing a result); now zero detections are allowed. The upload cell reused stale copies of the library; now the version is checked. Pair search ignored orbit direction; fixed.
 * **Not changed on purpose:** the radar scene time window (60 s before, 90 s after the scene start) because it worked for you; it is now a setting (`scene_pad_s`). Check the scene footprint coverage that the notebook prints.
 
+## What changed in v0.3.0 (found by inspecting the real files)
+* **Verdict.** The stored run had radar "water" of 0.05 km2 (about 55 pixels of 900 m2, in 6 small separate blobs). Cloud-free Sentinel-2 covered 100% of those pixels and saw no water there (agreement 0.0). The old rules still printed "water_detected (low confidence)". Now a radar candidate that cloud-free optical imagery clearly does not support is **inconclusive**. `results.json` was re-assessed with the new rule using only its own stored numbers (the old verdict is kept in `evidence.previous`). The imagery was **not** reprocessed.
+* **Black block on Sentinel-2 "after".** 50.7% of that overlay was one contiguous block of pure black: the part of the map outside the Sentinel-2 swath (no data), drawn opaque because the overlay had no transparency. It is not dark vegetation or water. Fixed in `_png_uri` / `s2_display_array`; the shipped `dashboard.html` was repaired with `tools/fix_overlay_nodata.py` (only the alpha channel changed).
+* **White patches** are cloud (saturated reflectance). The "before" picture is also a mosaic of several acquisitions (visible seam), because images are chosen by least cloud over a 12-day window.
+* **Radar overlay.** It covers the whole box (the rectangle is the box you chose, bounds identical for all layers). 23.5% of pixels are transparent because they were excluded as radar shadow/layover or bad incidence angle; the rest looks speckled because the overlay shows the raw single-look image, previously also shrunk by dropping every second pixel. Now it is shrunk by block-averaging.
+* **"Not assessed" layer** was silently cut to the first 4000 shapes. Big masks are now drawn as a raster overlay.
+* **Copilot.** The claim checker wrongly rejected the phrase "not confirmed damaged"; fixed. Gemini client is created once, not per question. New `/api/status`.
+* **Chat button** moved to bottom-centre so it no longer covers the legend.
+
 ## Known limits (please read)
 * Live services (Copernicus catalogue/Process API, the AWS DEM download, Overpass) were **not** tested by the author. The requested terrain-geometry bands (`localIncidenceAngle`, `shadowMask`) are optional: if Sentinel Hub rejects them the notebook continues without them and says so.
+* The v0.3.0 changes were tested with synthetic data and the stored files only (see `VALIDATION_REPORT.md`). `make_dashboard`, the notebook and the live services were not run by the author of this version.
 * No validation against reference flood maps has been run. Do not quote precision, recall, F1 or IoU until you have scored a frozen run.
 * The synthetic benchmark shows the code behaves sensibly in controlled cases only.
 * SAR cannot see flooding under dense vegetation, in very narrow channels, or in most built-up areas, and monsoon rain and shadow cause false flags.

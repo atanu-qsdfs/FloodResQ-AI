@@ -30,7 +30,7 @@ from datetime import date, datetime, timedelta, timezone
 import numpy as np
 import requests
 
-__version__ = "0.2.3"
+__version__ = "0.3.0"
 
 logger = logging.getLogger("floodresq")
 
@@ -955,6 +955,9 @@ DEFAULT_PARAMS = {
     "normalise_bias": True,
     # evidence rules
     "min_water_km2": 0.02, "max_control_ratio": 0.5, "min_corridor_valid": 0.7, "max_noise_sigma_db": 2.5,
+    # optical cross-check (v0.3.0): if cloud-free Sentinel-2 covers at least this share of the radar water but
+    # fewer than `optical_agree_min` of those pixels are optical water, the radar candidate is NOT supported.
+    "optical_min_water_coverage": 0.5, "optical_agree_min": 0.2,
 }
 
 
@@ -1169,6 +1172,8 @@ def detect_flood(pre, post, ctx, ctrl=None, params=None, use_unstable=True):
     inc = remove_small(cand & (d_vv > 0), p["min_pixels_change"])
     dec = remove_small(cand & (d_vv < 0), p["min_pixels_change"])
 
+    stats["water_pixels"] = int(water.sum())
+    stats["water_components"] = int(ndimage.label(water)[1]) if water.any() else 0
     stats["builtup_excluded_px"] = int((sig & builtup).sum())
     stats["unstable_excluded_px"] = int((sig & ~builtup & unstable).sum())
     return {"water": water, "change_increase": inc, "change_decrease": dec, "permanent_water": permanent,
@@ -1218,11 +1223,27 @@ def explain_empty_water(det, grid):
     return out
 
 
+def optical_contradicts(s2, params=None):
+    """True when usable, cloud-free Sentinel-2 covers most of the radar water yet does NOT see water there.
+    (Cloud-covered radar water cannot be contradicted; partial coverage is treated as weak, not as a contradiction.)"""
+    p = dict(DEFAULT_PARAMS)
+    p.update(params or {})
+    if not s2 or not s2.get("usable"):
+        return False
+    agr, cov = s2.get("agreement"), s2.get("cloud_free_fraction_of_radar_water")
+    if agr is None or cov is None:
+        return False
+    return bool(cov >= p["optical_min_water_coverage"] and agr < p["optical_agree_min"])
+
+
 def assess_evidence(flood, qc, params=None, s2=None, pair_warnings=None):
     """Decide how much the evidence supports. Never forces a positive result.
 
     verdict: 'water_detected' | 'no_water_detected' | 'inconclusive'. confidence: 'low' | 'medium'
-    ('high' is never used: nothing here is validated against reference data)."""
+    ('high' is never used: nothing here is validated against reference data).
+
+    v0.3.0: a radar water candidate that cloud-free Sentinel-2 imagery clearly does not support is reported as
+    'inconclusive' (an unconfirmed radar candidate), not as 'water_detected with low confidence'."""
     p = dict(DEFAULT_PARAMS)
     p.update(params or {})
     reasons = []
@@ -1244,23 +1265,26 @@ def assess_evidence(flood, qc, params=None, s2=None, pair_warnings=None):
     water = flood["water_km2"]
     cw = flood.get("control_water_km2")
     ratio_bad = (cw is not None and water > 0 and cw >= p["max_control_ratio"] * water)
-    if flood.get("control_water_km2") is None:
+    if cw is None:
         add("no_control")
     if ratio_bad:
         add("water_not_above_noise", control=round(cw, 2), event=round(water, 2))
 
-    s2_note = None
-    if s2 and s2.get("usable"):
-        s2_note = s2
+    s2_note = s2 if (s2 and s2.get("usable")) else None
+    contradicted = water >= p["min_water_km2"] and optical_contradicts(s2_note, p)
+    partial_disagree = bool(s2_note and s2_note.get("agreement") is not None and s2_note["agreement"] < p["optical_agree_min"])
 
     if blockers:
         verdict, conf = "inconclusive", None
+    elif water >= p["min_water_km2"] and not ratio_bad and contradicted:
+        verdict, conf = "inconclusive", None
+        add("optical_disagrees")
     elif water >= p["min_water_km2"] and not ratio_bad:
         verdict = "water_detected"
         strong = (cw is not None and water >= 0.5 and cw <= 0.1 * water)
         s2_ok = bool(s2_note and s2_note.get("agreement") is not None and s2_note["agreement"] >= 0.5)
         conf = "medium" if (strong and s2_ok) else "low"
-        if s2_note and s2_note.get("agreement") is not None and s2_note["agreement"] < 0.2:
+        if partial_disagree:
             add("optical_disagrees")
             conf = "low"
     elif ratio_bad:
@@ -1288,7 +1312,11 @@ def s2_support(s2_pre, s2_post, water, near_mask, grid, min_cloud_free=0.3):
             "agreement": None if agreement is None else round(agreement, 3),
             "optical_new_water_km2": round(area_km2(new_water, grid), 2) if usable else None,
             "cloud_fraction_pre": round(float(s2_pre["cloud_fraction"]), 3),
-            "cloud_fraction_post": round(float(s2_post["cloud_fraction"]), 3)}
+            "cloud_fraction_post": round(float(s2_post["cloud_fraction"]), 3),
+            "radar_water_pixels_checked": int((cq & water).sum()),
+            "window_pre": list(s2_pre.get("window") or []) or None,
+            "window_post": list(s2_post.get("window") or []) or None,
+            "mosaic": "least-cloud composite over the window (acquisition days may differ)"}
 
 
 # --------------------------------------------------------------------------
@@ -1478,6 +1506,8 @@ LIMITATIONS = [
     "Roads, buildings and bridges come from pre-event OpenStreetMap, which is incomplete in remote areas; unmapped roads and paths are invisible.",
     "Cut-off status uses mapped roads only: it ignores footpaths, helicopters, repairs and the real road condition, and it depends on the flagged pixels being truly impassable.",
     "The thresholds were not validated against reference flood maps. Treat all results as unvalidated estimates.",
+    "Sentinel-2 images are least-cloud mosaics over a date window, so the optical 'before'/'after' pictures may combine several acquisition days; "
+    "the optical water class (SCL) can also miss muddy water. Optical imagery is a cross-check, not proof either way.",
     "Educational prototype, not an operational tool; every result needs field confirmation.",
 ]
 
@@ -1564,6 +1594,7 @@ def build_results(grid, event_date, pair, control_scene, det, det_control, event
             "unstable_not_assessed_km2": round(fl["unstable_km2"], 2),
             "control_water_km2": None if fl.get("control_water_km2") is None else round(fl["control_water_km2"], 2),
             "control_change_km2": None if fl.get("control_change_km2") is None else round(fl["control_change_km2"], 2),
+            "water_pixels": fl.get("water_pixels"), "water_components": fl.get("water_components"),
         },
         "damage": {
             "buildings_total": bld["total"], "buildings_in_water": bld["in_water"],
@@ -1711,7 +1742,7 @@ def _reason_text(r, lang):
             "low_pair_coverage": "कुनै तस्बिरले अध्ययन क्षेत्र पूर्ण रूपमा ढाकेको छैन",
             "water_not_above_noise": "घटनाअघिका दुई तस्बिरमा पनि (%s वर्ग किमी) घटनाको (%s वर्ग किमी) जत्तिकै 'पानी' देखियो, त्यसैले शोरबाट छुट्याउन सकिएन" % (_f(r.get("control")), _f(r.get("event"))),
             "no_control": "शोर जाँचका लागि नियन्त्रण तस्बिर उपलब्ध थिएन",
-            "optical_disagrees": "Sentinel-2 को स्पष्ट आकाशको तस्बिरले रडारको पानीसँग मिल्दो संकेत देखाएन",
+            "optical_disagrees": "Sentinel-2 को स्पष्ट आकाशको तस्बिरले रडारको पानीसँग मिल्दो संकेत देखाएन (रडारको नतिजा अपुष्ट)",
         }.get(c, c)
     return {
         "low_valid_coverage": "only %s%% of the river corridor has reliable radar data" % _f(r.get("value")),
@@ -1719,7 +1750,7 @@ def _reason_text(r, lang):
         "low_pair_coverage": "one scene does not cover the whole study area",
         "water_not_above_noise": "two pre-event scenes also showed %s sq km of 'water' (event: %s sq km), so it cannot be told apart from noise" % (_f(r.get("control")), _f(r.get("event"))),
         "no_control": "no control scene was available for a noise check",
-        "optical_disagrees": "cloud-free Sentinel-2 imagery does not support the radar water",
+        "optical_disagrees": "cloud-free Sentinel-2 imagery does not show water where the radar flagged it, so the radar candidate is unconfirmed",
     }.get(c, c)
 
 
@@ -1904,6 +1935,9 @@ def report_sections(results, lang="en"):
                     % (m["pre_date"], m["post_date"], _f(fl["water_km2"]), _f(m["pixel_size_m"])))
         else:
             head = "The evidence is inconclusive, so no flood extent is claimed" + ((": " + reasons) if reasons else "") + "."
+            if any(r["code"] == "optical_disagrees" for r in ev["reasons"]) and fl.get("water_km2"):
+                head += (" The radar flagged %s sq km as possible open water (an unconfirmed candidate, not a flood extent)."
+                         % _f(fl["water_km2"]))
         change = ("Outside built-up areas, radar backscatter increased over %s sq km and decreased over %s sq km. These are surface-change candidates only "
                   "(possibly debris, sediment, wet ground or vegetation change), not confirmed debris."
                   % (_f(fl["change_increase_km2"]), _f(fl["change_decrease_km2"])))
@@ -1978,7 +2012,7 @@ def check_numbers(text, results):
     return [x for x in extract_numbers(text) if not any(abs(x - a) < 1e-6 for a in allowed)]
 
 
-_BANNED_EN = re.compile(r"\b(destroyed|collapsed|washed away|swept away|confirmed damage[d]?|(is|are|were|was) damaged|"
+_BANNED_EN = re.compile(r"\b(destroyed|collapsed|washed away|swept away|(?<!not )(?<!no )(?<!un)confirmed damage[d]?|(is|are|were|was) damaged|"
                         r"(is|are|were|was) (cut off|isolated)|definitely|certainly)\b", re.I)
 _BANNED_NE = re.compile(r"(ध्वस्त|नष्ट भए|भत्किए|बगाए|निश्चित रूपमा)")
 _HEDGE = re.compile(r"(estimate|potential|possible|possibly|may |might|suspected|unconfirmed|not confirmed|inconclusive|"
@@ -2097,23 +2131,82 @@ def _mask_geojson(mask, grid, max_features=4000):
     return {"type": "FeatureCollection", "features": feats}, len(feats) >= max_features
 
 
-def _png_uri(arr, kind="gray", vmin=-25.0, vmax=0.0, max_px=900):
-    """Small PNG data-URI for a map overlay (NaN = transparent)."""
+def _block_mean(a, step):
+    """Average step x step blocks, ignoring NaN (anti-aliased shrink instead of dropping every other pixel).
+    A block is kept only if at least half of its pixels are finite."""
+    h, w = a.shape[0] // step * step, a.shape[1] // step * step
+    a = a[:h, :w]
+    new_shape = (h // step, step, w // step, step) + a.shape[2:]
+    b = a.reshape(new_shape)
+    fin = np.isfinite(b)
+    cnt = fin.sum(axis=(1, 3))
+    tot = np.where(fin, b, 0.0).sum(axis=(1, 3))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        out = tot / cnt
+    keep = cnt >= (step * step) / 2.0
+    return np.where(keep, out, np.nan)
+
+
+def s2_display_array(s2):
+    """RGBA array for the dashboard: real colours, alpha 0 where Sentinel-2 has NO DATA (outside the swath).
+    Clouds stay visible (they are part of the image); they are NOT dark, no-data is not black."""
+    rgb = np.asarray(s2["rgb"], dtype="float32")
+    valid = np.asarray(s2["valid"], dtype="float32")
+    return np.concatenate([rgb, valid[..., None]], axis=-1)
+
+
+def _png_uri(arr, kind="gray", vmin=-25.0, vmax=0.0, max_px=1200):
+    """Small PNG data-URI for a map overlay. NaN (gray) or alpha<=0.5 (rgb with a 4th channel) = transparent.
+    Large rasters are shrunk by block-averaging, never by dropping pixels."""
     import base64
     import io
     import matplotlib
     matplotlib.use("Agg", force=False)
     import matplotlib.pyplot as plt
-    step = max(1, int(math.ceil(max(arr.shape[0], arr.shape[1]) / float(max_px))))
-    a = arr[::step, ::step]
+    a = np.asarray(arr, dtype="float32")
+    step = max(1, int(math.ceil(max(a.shape[0], a.shape[1]) / float(max_px))))
+    if step > 1:
+        a = _block_mean(a, step)
     if kind == "rgb":
-        rgba = np.concatenate([np.clip(a[..., :3], 0, 1), np.ones(a.shape[:2] + (1,))], axis=-1)
+        alpha = a[..., 3] if a.shape[-1] > 3 else np.ones(a.shape[:2], dtype="float32")
+        alpha = np.where(np.isfinite(alpha) & (alpha > 0.5), 1.0, 0.0)
+        rgba = np.concatenate([np.clip(np.nan_to_num(a[..., :3]), 0, 1), alpha[..., None]], axis=-1)
     else:
         g = np.clip((a - vmin) / (vmax - vmin), 0, 1)
         rgba = np.stack([g, g, g, np.where(np.isfinite(a), 1.0, 0.0)], axis=-1)
     buf = io.BytesIO()
     plt.imsave(buf, np.nan_to_num(rgba), format="png")
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _mask_png_uri(mask, color, alpha=0.55):
+    """Transparent PNG with the flagged pixels filled (used for very large masks that are too big as vectors)."""
+    import base64
+    import io
+    import matplotlib
+    matplotlib.use("Agg", force=False)
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import to_rgb
+    r, g, b = to_rgb(color)
+    rgba = np.zeros(mask.shape + (4,), dtype="float32")
+    rgba[mask] = (r, g, b, alpha)
+    buf = io.BytesIO()
+    plt.imsave(buf, rgba, format="png")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+MAX_VECTOR_PIXELS = 6000      # masks with more flagged pixels than this are drawn as a raster overlay
+
+VERDICT_TEXT = {
+    "water_detected": "Suspected flood water detected (unvalidated)",
+    "no_water_detected": "No newly open-water-like ground detected (does not prove no flooding)",
+    "inconclusive": "INCONCLUSIVE - no flood extent claimed",
+}
+
+
+def verdict_text(results):
+    ev = results.get("evidence") or {}
+    return VERDICT_TEXT.get(ev.get("verdict"), "No verdict recorded in this results file (older analysis version)")
 
 
 STATUS_COLOR = {"likely_cut_off": "#8b0000", "possibly_cut_off": "red", "reachable": "green",
@@ -2157,7 +2250,10 @@ def make_dashboard(path, grid, masks, osm, impacts, access, targets, results, im
     ]
     for key, label, color, show in layer_spec:
         mask = masks.get(key)
-        if mask is not None and mask.any():
+        if mask is not None and int(mask.sum()) > MAX_VECTOR_PIXELS:
+            raster_layers.ImageOverlay(image=_mask_png_uri(mask, color), bounds=[[s, w], [n, e]], opacity=1.0,
+                                       name=label, show=show).add_to(m)
+        elif mask is not None and mask.any():
             gj, trunc = _mask_geojson(mask, grid)
             folium.GeoJson(gj, name=label, show=show,
                            style_function=lambda x, c=color: {"color": c, "fillColor": c, "weight": 1, "fillOpacity": 0.5}).add_to(m)
@@ -2213,9 +2309,7 @@ def make_dashboard(path, grid, masks, osm, impacts, access, targets, results, im
     folium.LayerControl(collapsed=False).add_to(m)
 
     f, a, ev, mt = results["flood"], results["access"], results["evidence"], results["meta"]
-    verdict = {"water_detected": "Suspected flood water detected (unvalidated)",
-               "no_water_detected": "No newly open-water-like ground detected (does not prove no flooding)",
-               "inconclusive": "INCONCLUSIVE - no flood extent claimed"}[ev["verdict"]]
+    verdict = VERDICT_TEXT[ev["verdict"]]
     reasons = "; ".join(_reason_text(r, "en") for r in ev["reasons"] if r["code"] != "no_control")
     info = (
         "<div style='position:fixed;bottom:8px;left:8px;z-index:9999;background:white;padding:8px;"
@@ -2242,7 +2336,11 @@ def make_dashboard(path, grid, masks, osm, impacts, access, targets, results, im
         + sw("#1e90ff", "Suspected open water") + sw("#ff8c00", "Backscatter increase (candidate)")
         + sw("#8e44ad", "Backscatter decrease (candidate)") + sw("#8b0000", "Likely cut off (water only)")
         + sw("red", "Possibly cut off (any flagged pixel)") + sw("green", "Reachable") + sw("gray", "Already unconnected before event")
-        + sw("lightgray", "Not near a mapped road") + sw("#1f4fd8", "Pre-event route (dashed)") + "</div>")
+        + sw("lightgray", "Not near a mapped road") + sw("#1f4fd8", "Pre-event route (dashed)")
+        + sw("#00bcd4", "Permanent / pre-existing water") + sw("#888888", "Not assessed (built-up / unstable)")
+        + "<div style='max-width:230px;margin-top:4px;color:#333'><b>Imagery:</b> radar = grey scale, -25 dB (dark) to 0 dB (bright); "
+        "transparent = excluded (radar shadow / layover / no data). Sentinel-2 = true colour; white = cloud, "
+        "transparent = no data. Dark radar is not automatically water.</div></div>")
     m.get_root().html.add_child(folium.Element(info))
     m.get_root().html.add_child(folium.Element(legend))
     m.save(path)
@@ -2580,3 +2678,102 @@ def pair_water_scan(client, grid, pairs, ctx, params=None, pad_s=60, fetch=None)
         })
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------
+# v0.3.0: results.json schema check and re-assessment with the current evidence rules
+# --------------------------------------------------------------------------
+SCHEMA_VERSION = 2
+_REQUIRED = {
+    "meta": ("event_date", "pre_date", "post_date", "orbit_track", "orbit_direction", "osm_snapshot", "generated_utc",
+             "software_version", "pixel_size_m"),
+    "flood": ("water_km2", "change_increase_km2", "change_decrease_km2", "permanent_water_km2",
+              "builtup_not_assessed_km2", "unstable_not_assessed_km2", "control_water_km2", "control_change_km2"),
+    "damage": ("buildings_total", "buildings_in_flagged_area", "roads_total_km", "roads_in_flagged_area_km",
+               "bridges_total", "bridges_possibly_hit"),
+    "access": ("settlements_total", "possibly_cut_off", "likely_cut_off", "unconnected_before_event",
+               "not_on_road_network", "possibly_cut_off_names", "possibly_cut_off_names_truncated",
+               "likely_cut_off_names"),
+    "evidence": ("verdict", "confidence", "reasons"),
+}
+_NUMERIC = {"flood": ("water_km2", "change_increase_km2", "change_decrease_km2", "permanent_water_km2"),
+            "damage": ("buildings_total", "roads_total_km", "bridges_total"),
+            "access": ("settlements_total", "possibly_cut_off", "likely_cut_off")}
+
+
+def validate_results(results):
+    """Return a list of problems (empty list = the file has the current schema and sane values).
+    Older layouts (no 'evidence' block) are reported explicitly, never silently accepted."""
+    problems = []
+    if not isinstance(results, dict):
+        return ["results is not a JSON object"]
+    if results.get("schema_version") != SCHEMA_VERSION:
+        problems.append("schema_version is %r, expected %d (older or different pipeline version)"
+                        % (results.get("schema_version"), SCHEMA_VERSION))
+    for sec, keys in _REQUIRED.items():
+        block = results.get(sec)
+        if not isinstance(block, dict):
+            problems.append("missing section '%s'" % sec)
+            continue
+        for k in keys:
+            if k not in block:
+                problems.append("missing key %s.%s" % (sec, k))
+    for sec, keys in _NUMERIC.items():
+        for k in keys:
+            v = (results.get(sec) or {}).get(k)
+            if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v < 0):
+                problems.append("%s.%s must be a non-negative number, found %r" % (sec, k, v))
+    ev = results.get("evidence") or {}
+    if ev.get("verdict") not in VERDICT_TEXT:
+        problems.append("evidence.verdict must be one of %s" % sorted(VERDICT_TEXT))
+    if ev.get("confidence") not in (None, "low", "medium"):
+        problems.append("evidence.confidence must be null, 'low' or 'medium'")
+    if ev.get("validated_against_reference") not in (False, None) and not (results.get("validation") or {}).get("metrics"):
+        problems.append("claims validation without metrics")
+    if not isinstance(results.get("limitations"), list) or not results.get("limitations"):
+        problems.append("limitations list is missing")
+    return problems
+
+
+def reassess_results(results):
+    """Re-apply the CURRENT evidence rules to the numbers already stored in one results.json (same run, no new data).
+    Nothing is recomputed from imagery. The old evidence block is kept under evidence['previous'] for transparency."""
+    import copy
+    out = copy.deepcopy(results)
+    q = out.get("quality") or {}
+    p = dict(DEFAULT_PARAMS)
+    p.update({k: v for k, v in (out.get("parameters") or {}).items() if k in DEFAULT_PARAMS})
+    qc = {"corridor_valid_fraction": q.get("corridor_valid_fraction", 1.0),
+          "sigma_empirical_db": q.get("noise_sigma_empirical_db")}
+    new = assess_evidence(out["flood"], qc, p, q.get("s2"), None)
+    old = out.get("evidence") or {}
+    new["previous"] = {"verdict": old.get("verdict"), "confidence": old.get("confidence"),
+                       "reasons": old.get("reasons"), "rules_version": (out.get("meta") or {}).get("software_version")}
+    new["rules_version"] = __version__
+    new["note"] = ("Evidence rules of software %s were applied to the stored numbers of this same run; "
+                   "no imagery was reprocessed." % __version__)
+    out["evidence"] = new
+    lim = list(out.get("limitations") or [])
+    for item in LIMITATIONS:
+        if item not in lim:
+            lim.insert(max(0, len(lim) - 1), item)
+    out["limitations"] = lim
+    return out
+
+
+def dashboard_matches_results(html_text, results):
+    """Cheap consistency check: does the dashboard's info box show the same run and the same headline numbers?
+    Returns a list of mismatches (empty = consistent)."""
+    problems = []
+    m = results.get("meta") or {}
+    fl = results.get("flood") or {}
+    if str(m.get("generated_utc", "")) and ("generated %s UTC" % m["generated_utc"]) not in html_text:
+        problems.append("dashboard was generated at a different time than results.json (%s)" % m.get("generated_utc"))
+    for label, key in (("Water: %s sq km", "water_km2"),):
+        v = fl.get(key)
+        if v is not None and (label % _f(v)) not in html_text:
+            problems.append("dashboard water area differs from results.json (%s)" % _f(v))
+    for k in ("pre_date", "post_date"):
+        if m.get(k) and str(m[k]) not in html_text:
+            problems.append("dashboard does not mention %s %s" % (k, m[k]))
+    return problems

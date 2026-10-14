@@ -13,9 +13,11 @@ results.json. If the model is unavailable (no key, quota, wrong model name, netw
 
 /api/chat ALWAYS answers with JSON (never an HTML error page), so the browser can show a readable message.
 """
+import html as html_lib
 import json
 import logging
 import os
+import re
 import threading
 import time
 from collections import defaultdict, deque
@@ -95,6 +97,12 @@ def load_results():
     missing = [k for k in REQUIRED_SECTIONS if not isinstance(data.get(k), dict)]
     if missing:
         raise ResultsError("results.json is missing the section(s): %s." % ", ".join(missing))
+    problems = fr.validate_results(data)
+    if problems and not fr.is_legacy_results(data):
+        # current layout but incomplete/invalid: refuse instead of answering from a half-broken file
+        raise ResultsError("results.json does not match the expected schema: %s" % "; ".join(problems[:4]))
+    if problems:
+        log.warning("results.json uses an older layout (%s); answers will say so", problems[0])
     return data
 
 
@@ -125,7 +133,19 @@ def make_answer(question, lang, results, llm):
     return out
 
 
+_llm_cache = {}
+
+
 def gemini_llm():
+    """Cached wrapper: build the Gemini client once per process (and again only if the key changes)."""
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if key not in _llm_cache:
+        _llm_cache.clear()
+        _llm_cache[key] = _build_gemini_llm()
+    return _llm_cache[key]
+
+
+def _build_gemini_llm():
     """Return a function call(system, question) -> text, or None when no GEMINI_API_KEY / SDK is available."""
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
@@ -155,31 +175,113 @@ def gemini_llm():
 
 _page = {}
 
+NOTES_CSS = ("#frq-notes{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:9998;width:min(520px,calc(100vw - 460px));"
+             "min-width:260px;background:#fff;border:2px solid __COLOR__;border-radius:8px;font:12px/1.4 Arial,sans-serif;color:#172033;"
+             "box-shadow:0 2px 10px #0003}#frq-notes summary{cursor:pointer;padding:7px 10px;font-weight:700}"
+             "#frq-notes div{padding:0 10px 8px}@media(max-width:900px){#frq-notes{left:8px;transform:none;width:calc(100vw - 16px);top:auto;bottom:60px}}")
+VERDICT_COLOR = {"water_detected": "#1e6fd9", "no_water_detected": "#2e7d32", "inconclusive": "#b26a00"}
 
-def add_copilot_widget(html):
-    """The notebook's dashboard.html has the map but NOT the chat button. Insert copilot_widget.html once, before </body>.
-    A dashboard that already contains the widget is returned unchanged."""
+
+def _reasons_text(results):
+    ev = results.get("evidence") or {}
+    return "; ".join(fr._reason_text(r, "en") for r in ev.get("reasons", []) if r.get("code") != "no_control")
+
+
+def build_notes_panel(results, mismatches):
+    """A small, data-driven box at the top of the map: verdict and how to read the imagery. Everything comes from results.json."""
+    ev = results.get("evidence") or {}
+    verdict = fr.verdict_text(results)
+    color = VERDICT_COLOR.get(ev.get("verdict"), "#555")
+    fl = results.get("flood") or {}
+    reasons = _reasons_text(results)
+    warn = ""
+    if mismatches:
+        warn = ("<div style='background:#fdecea;border:1px solid #c62828;padding:6px;margin:4px 10px'><b>Warning:</b> the map and "
+                "results.json may come from different runs (%s). Re-run the notebook and upload both files together.</div>"
+                % html_lib.escape("; ".join(mismatches)))
+    cand = ""
+    if ev.get("verdict") == "inconclusive" and fl.get("water_km2"):
+        cand = " Radar candidate: %s sq km (unconfirmed)." % fr._f(fl["water_km2"])
+    return ("<style>" + NOTES_CSS.replace("__COLOR__", color) + "</style><details id='frq-notes' open><summary>Verdict: " + html_lib.escape(verdict) +
+            "</summary>" + warn + "<div>" + html_lib.escape(reasons[:1].upper() + reasons[1:] + "." if reasons else "") +
+            html_lib.escape(cand) + "<br><b>How to read the map:</b> radar layers are grey scale (dark = low backscatter, which can be "
+            "water, but also smooth ground or radar shadow; transparent = excluded pixels). Sentinel-2 layers are true colour "
+            "(white = cloud, transparent = no data). Coloured polygons are algorithm candidates, not confirmed flooding or damage. "
+            "No comparison with an independent reference map has been run.</div></details>")
+
+
+def sync_dashboard(html, results):
+    """Make the stored map agree with results.json: replace the verdict line with the one computed from results.json,
+    and show a visible warning when the map and the results look like different runs."""
+    mismatches = fr.dashboard_matches_results(html, results)
+    verdict = fr.verdict_text(results)
+    reasons = _reasons_text(results)
+    line = "<b>Verdict:</b> %s%s<br>" % (html_lib.escape(verdict), (" (" + html_lib.escape(reasons) + ")") if reasons else "")
+    html, n = re.subn(r"<b>Verdict:</b>.*?<br>", lambda m: line, html, count=1, flags=re.S)
+    return html, build_notes_panel(results, mismatches), mismatches
+
+
+def add_copilot_widget(html, notes=""):
+    """The notebook's dashboard.html has the map but NOT the chat button. Insert the notes panel and
+    copilot_widget.html once, before </body>. A page that already contains the widget is returned unchanged."""
     if "frq-launch" in html:
         return html
     widget = (BASE / "copilot_widget.html").read_text(encoding="utf-8")
+    extra = notes + widget
     i = html.rfind("</body>")
     if i == -1:
         i = html.rfind("</html>")
     if i == -1:
-        return html + widget
-    return html[:i] + widget + html[i:]
+        return html + extra
+    return html[:i] + extra + html[i:]
+
+
+def _plain_page(title, text, status):
+    body = ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>%s</title><body style='font:16px Arial;max-width:640px;margin:40px auto;padding:0 16px'><h1>%s</h1><p>%s</p>"
+            "<p><a href='/healthz'>Health check</a></p></body>" % (html_lib.escape(title), html_lib.escape(title), html_lib.escape(text)))
+    return Response(body, status=status, mimetype="text/html")
 
 
 @app.get("/")
 def home():
     if "html" not in _page:
-        _page["html"] = add_copilot_widget((BASE / "dashboard.html").read_text(encoding="utf-8"))
+        try:
+            raw = (BASE / "dashboard.html").read_text(encoding="utf-8")
+            results = load_results()
+        except FileNotFoundError:
+            return _plain_page("FloodResQ AI", "dashboard.html is missing on the server. Upload it to the GitHub repository next to app.py.", 503)
+        except ResultsError as e:
+            return _plain_page("FloodResQ AI", "The map cannot be shown: %s" % e, 503)
+        raw, notes, mism = sync_dashboard(raw, results)
+        if mism:
+            log.warning("dashboard/results mismatch: %s", "; ".join(mism))
+        _page["html"] = add_copilot_widget(raw, notes)
+        _page["mismatches"] = mism
     return Response(_page["html"], mimetype="text/html")
 
 
 @app.get("/healthz")
 def healthz():
     return jsonify(status="ok")
+
+
+@app.get("/api/status")
+def status():
+    """Small JSON for checking the deployment: which files exist, whether the data is consistent, whether a key is set."""
+    info = {"dashboard_html": (BASE / "dashboard.html").exists(), "results_json": (BASE / "results.json").exists(),
+            "copilot_widget_html": (BASE / "copilot_widget.html").exists(), "gemini_key_set": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+            "gemini_sdk_installed": genai is not None, "model": MODEL, "software": fr.__version__}
+    try:
+        res = load_results()
+        info["verdict"] = (res.get("evidence") or {}).get("verdict")
+        info["schema_problems"] = fr.validate_results(res)
+    except ResultsError as e:
+        info["results_error"] = str(e)
+    if "html" not in _page and info["dashboard_html"] and "results_error" not in info:
+        home()
+    info["dashboard_results_mismatch"] = _page.get("mismatches")
+    return jsonify(info)
 
 
 @app.get("/api/results")
